@@ -1,0 +1,34 @@
+name: Publish
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LilyPond
+        uses: codello/setup-lilypond@v0.1.0
+        with:
+          lilypond-version: 2.24
+
+      - name: Render LilyPond
+        run: lilypond-book --pdf paper/paper.lytex
+
+      - name: Generate PDF
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: paper.tex
+          texlive_version: 2025
+
+      - name: Upload PDF
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: paper.pdf
+          commit: main
+          tag: current
+          allowUpdates: true
