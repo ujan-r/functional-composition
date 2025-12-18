@@ -1,0 +1,41 @@
+name: Publish
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LilyPond
+        uses: codello/setup-lilypond@v0.1.0
+        with:
+          lilypond-version: 2.24
+
+      - name: Install TeX Live
+        uses: zauguin/install-texlive@v4
+        with:
+          packages: >
+            scheme-basic
+            latexmk
+            biblatex-chicago biblatex xstring biber
+            charter
+            hyperref
+            microtype
+            minted lineno upquote
+            xcolor
+
+      - name: Generate PDF
+        run: cd paper && make
+
+      - name: Upload PDF
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: paper/paper.pdf
+          commit: main
+          tag: current
+          allowUpdates: true
