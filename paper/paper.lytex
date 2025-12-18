@@ -1,0 +1,426 @@
+\documentclass{report}
+
+\usepackage{microtype}
+
+\usepackage{charter}
+
+\usepackage{xcolor}
+
+\definecolor{codebg}{rgb}{0.95, 0.95, 0.99}
+
+\usepackage{minted}
+\setminted{fontsize=\small,bgcolor=codebg,bgcolorpadding=0.5em}
+\usemintedstyle{bw}
+
+\usepackage{biblatex-chicago}
+\addbibresource{paper.bib}
+
+\usepackage{hyperref}
+\urlstyle{same}
+\hypersetup{
+	colorlinks=true,
+	allcolors=blue,
+}
+
+\begin{document}
+
+\pagenumbering{gobble}
+
+\begin{titlepage}
+% TODO: title page here
+\end{titlepage}
+
+\pagenumbering{roman}
+
+\tableofcontents
+
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{Gradus ad Parnassum}
+
+\begin{figure}[H]
+\label{ly:cf_short}
+\centering
+\begin{lilypond}
+	\language "english"
+	{ d'1 e' fs' g' a' d' e' d' \bar "|." }
+\end{lilypond}
+\end{figure}
+
+\noindent My first encounter with composition in the undergraduate curriculum
+came in the form of species counterpoint. The exercises were straightforward:
+given a \textit{cantus firmus} of eight or so measures, students would write a
+melody that followed a very specific set of rules. It was often a mechanical
+activity---only a handful of notes were ever possible at each juncture.
+
+Still, I found that I had an advantage over my peers. As a pianist, I had spent
+years playing polyphonic music in a way that the vocalists and other
+instrumentalists had not. Unlike them, I rarely thought about the rules when
+completing these exercises. It seems that, by studying piano, I had unwittingly
+developed an intuition for counterpoint.
+
+It's easy for computers to generate species counterpoint: they are incredibly
+powerful and, given a \textit{cantus firmus}, can exhaustively search the space
+of possible melodies until they find one that satisfies all of the rules. But
+can they develop this sense of ``intuition"? In this thesis, we will explore
+what it means for a computer to understand music.
+
+\section{From beats to bytes}
+
+As we study music---learning about notes and rhythms, melody and harmony, and
+how history and theory come together---we begin to understand it more clearly.
+We hear our favorite songs in a new language, one of chords and voicings and
+layers inaccessible to the ordinary listener. Music is transformed from a blurry
+collection of sounds into a concrete set of ideas.
+
+% We achieve this understanding like children learning their first language: first
+% by associating concepts we hear with 
+% [assigning labels, associating concepts we hear with language (whether through
+% lead sheets and scores or solmization and the Guidonian hand), generalizing
+% concepts and thinking more abstractly].
+
+% [Sapir---Whorf hypothesis applies to music]. [Neo-Riemannian theory is based on
+% efficient voice leading, a concept that predates it by centuries---see Chopin's
+% Prelude Op. 28, No. 4---but its development was hampered by the rigid system of
+% tonality in Western music]. This effect is compounded when working with computer
+% programs
+
+Computers don't go through this process. They understand music only as well as
+we describe it: a program designed solely to read sheet music will never
+understand the un-notated \textit{rubato} hidden beneath the surface. The system
+we use to represent musical information will determine the limits of the
+programs we write, so we must consider our choice carefully.
+
+What is the most meaningful representation of a piece of music? Audio files seem
+like a good starting point, as they capture music in the same way as our ears.
+But audio recordings have some undesirable qualities. For example, two clips of
+the same piece can sound dramatically different due to variations in tempo,
+tuning, timbre, recording equipment, and even the environment. Additionally,
+recordings capture all kinds of noise, so---unless the music is entirely
+synthesized---no two performances will produce the same audio file.
+
+Perhaps scores are better. For one, they don't have noise. They also capture
+more information about the music rather than a particular performance. But
+scores emphasize unimportant notational aspects---consider the many aesthetic
+and practical considerations that go into good engraving. And Western musical
+notation comes in many loosely standardized flavors, making it difficult for
+computers to parse.
+
+MIDI\footcite{midi} appears to be a sort of middle ground: the format contains
+much of the musical information of scores without any of the notational quirks,
+and it was designed with computers in mind. Still, it's quite complex, encoding
+all kinds of data that is more important to synthesizers than to musicians.
+
+Lead sheets are promising: they lack the extraneous information found in scores
+and audio files, and they excel at preserving the identity of a song even as we
+change features like the accompaniment style or performing forces. However, this
+model is too restrictive, requiring music to be formulated in terms of a melody
+and chords.
+
+Clearly, different styles of music lend themselves to different representations.
+We need a general but meaningful way of representing various kinds of music that
+balances several considerations. Some desirable properties for such a format
+include the ease of parsing and generating music, high information density, and
+a lack of extraneous information.
+
+I propose a simple scheme for representing monophonic music. A voice is
+represented as a sequence of events, either notes or rests, each with an
+associated duration. Notes contain pitch information (letter name, accidental,
+and octave number); durations are represented as fractions of a whole note.
+
+\begin{minted}{haskell}
+type Voice = [(Maybe Note, Duration)]
+
+type Duration = Rational
+
+data Note = Note Letter Accidental Octave
+
+data Letter = A | B | C | D | E | F | G
+data Accidental = DoubleFlat | Flat | Natural | Sharp | DoubleSharp
+type Octave = Integer
+\end{minted}
+
+This representation has several limitations: it enforces a dodecaphonic
+conception of pitch, requires durations to be defined relative to a
+\textit{tactus}, encodes only monophonic voices, and neglects all aspects of
+music beyond pitch and rhythm. Nevertheless, its simplicity makes this system
+easy to work with for humans and computers alike, and it's still powerful enough
+to represent virtually any monophonic line in the twelve-tone system.
+
+\section{Case study: Species counterpoint}
+
+Although this system is inherently monophonic, it can encode species counterpoint
+quite easily: counterpoint is merely the juxtaposition of two monophonic voices.
+
+We can model each rule of species counterpoint as a function that takes a piece
+of (possibly unfinished) counterpoint as input and returns whether it follows
+the rule. For example, we can define a function to check the range of our
+melody:
+
+\begin{minted}{haskell}
+maxRangeRule music = maximum pitches - minimum pitches <= majorTenth
+  where
+    majorTenth = 16
+    pitches    = map pitch (cp music)
+\end{minted}
+
+Now, we can write an algorithm to generate first-species counterpoint as
+follows:
+
+\begin{figure}[H]
+	\small
+	\begin{enumerate}
+		\item Let $N$ be the set of all possible notes.
+		\item Let $R$ be the set of rules for counterpoint.
+		\item Let $\mathit{cf}$ be the sequence of notes in the given cantus firmus.
+		\item
+			Let $\mathit{cp}$ be the (initially empty) sequence of notes in our
+			composed melody.
+		\item \label{alg:branch}
+			If $\mathit{cp}$ is finished (has the same number of notes as
+			$\mathit{cf}$), then go to step~\ref{alg:done}. Otherwise:
+			\begin{enumerate}
+				\item \label{alg:for} For each note $n$ in $N$:
+					\begin{enumerate}
+						\item Append $n$ to $\mathit{cp}$.
+						\item
+							If $\mathit{cp}$ violates any of the rules in $R$,
+							remove $n$ from $\mathit{cp}$ and return to
+							step~\ref{alg:for}.
+						\item Go to step~\ref{alg:branch}.
+					\end{enumerate}
+				\item
+					No note satisfies the rules, so we need to backtrack. If
+					$\mathit{cp}$ is empty, give up. Otherwise, remove the last note
+					from $\mathit{cp}$ and return to step~\ref{alg:for}.
+			\end{enumerate}
+		\item \label{alg:done} Output $\mathit{cp}$.
+	\end{enumerate}
+	\hrule
+	\caption{A backtracking algorithm for generating species counterpoint.}
+	% \label{ly:basic_counterpoint}
+\end{figure}
+
+% TODO: cite rules
+Let's see what the computer does with the \textit{cantus firmus} from
+page~\pageref{ly:cf_short} and a basic set of rules found in [Fux] (see
+\ref{app:basic_rules} for a complete list):
+
+\begin{figure}[H]
+	\begin{lilypond}
+		\language "english"
+		<<
+		{ d'1 g' d' d'' fs' d' cs' d' }
+		{ d'1 e' fs' g' a' d' e' d' \bar "|." }
+		>>
+	\end{lilypond}
+	\caption{First-species counterpoint generated above a \textit{cantus firmus} with basic Fuxian rules}
+	\label{ly:basic_counterpoint}
+\end{figure}
+
+The generated melody shows some promise: its contour is different from that of
+the \textit{cantus} and there is a good balance of perfect and imperfect
+consonances. However, it is quite disjunct, with no stepwise motion until the
+final three notes, and there is voice crossing throughout. While these are not
+issues addressed directly by Fux, they were highlighted in my undergraduate
+education. Let's add some more rules commonly found in counterpoint texts (see
+\ref{app:common_rules} for a complete list):
+
+\begin{figure}[H]
+\begin{lilypond}
+	\language "english"
+	<<
+	{ d''1 g'' d'' e'' fs'' b' cs'' d'' }
+	{ d'1 e' fs' g' a' d' e' d' \bar "|." }
+	>>
+\end{lilypond}
+	\caption{First-species counterpoint generated above a \textit{cantus firmus}
+	with a set of common rules}
+\end{figure}
+
+While this fixes the issues with voice crossing and very large leaps, it doesn't
+seem to improve the musicality---in fact, the generated melody no longer has a
+distinctive contour and there are now five consecutive sixths in the
+counterpoint. Perhaps we can do better by adding ``rules" that encourage good
+melodic writing (the complete list of melodic guidelines can be found in
+\ref{app:guidelines}).
+
+\begin{figure}[H]
+\begin{lilypond}
+	\language "english"
+	<<
+	{ d''1 g'' fs'' d'' cs'' d'' cs'' d'' }
+	{ d'1 e' fs' g' a' d' e' d' \bar "|." }
+	>>
+\end{lilypond}
+	\caption{Counterpoint generated with a set of rules to encourage good
+	melodic writing}
+\end{figure}
+
+\begin{itemize}
+	\item acceptable contrapuntal writing (would get an A)
+	\item ascending leap of a perfect fourth up to the second note is strange
+		\begin{itemize}
+			\item artifact of the order in which we iterate over $N$
+			\item a human would almost certainly step down to the leading tone
+				here
+		\end{itemize}
+\end{itemize}
+
+\chapter{Giant Steps}
+
+We now have a program that composes passable species counterpoint, following the
+``rules" of Fuxian counterpoint and writing acceptable melodies. Still, it
+eschews some fundamental principles of melodic construction, sometimes producing
+unmusical results. In this example, there are leaps to perfect intervals where a
+step would yield contrary motion and measures spent vacillating between
+neighboring notes.
+
+\begin{figure}[H]
+	\begin{lilypond}[staffsize=16]
+		\language "english"
+		<<
+		{ d''1 b' d'' e'' cs'' d'' b' d'' b' d'' b' e'' e'' d'' }
+		{ d'1 e' fs' g' a' d' e' d' e' fs' g' e' cs' d' \bar "|." }
+		>>
+	\end{lilypond}
+	\caption{A rather unmusical melody generated over a long \textit{cantus firmus}}
+\end{figure}
+
+This isn't a particularly surprising result. After all, this is a lazy kind of
+composition: the computer takes the path of least resistance, choosing the first
+note that follows all the rules with no regard for the quality of the melody.
+
+How do we encourage the computer to generate a good melody? Instead of iterating
+over possible notes in some arbitrary order, what if we tried the ones that were
+most likely to result in a pleasing melody first?
+
+\section{How to write a melody}
+
+Penalize:
+\begin{itemize}
+	\item leaps (especially if leaps have occurred recently)
+	\item consecutive leaps (especially large leaps)
+	\item frequently occurring notes (based on how recently they occurred)
+	\item non-chord tones
+	\item chromatic pitches
+	\item large leaps from chromatic pitches
+\end{itemize}
+
+Prioritize:
+\begin{itemize}
+	\item steps following a leap (especially in the opposite direction)
+	\item smaller intervals
+	\item chord tones
+	\item diatonic pitches
+	\item stepwise resolution of non-diatonic pitches
+\end{itemize}
+
+\section{Case study: Jazz improvisation}
+
+\begin{figure}[H]
+	\begin{lilypond}[staffsize=18]
+		\version "2.24.1"
+		\language "english"
+		<<
+		\chords {
+		ef1:1.3-.5.7 af1:1.3-.5.7 d1:1.3-.5.7 g1:1.3+.5.7 c2:1.3+.5 c2:1.3+.5.7+ c2:1.3+.5.7 ef2:1.3+.5.7 ef1:1.3-.5.7 af1:1.3-.5.7 d1:1.3-.5.7 g1:1.3+.5.7 c2:1.3+.5 c2:1.3+.5.7+ c2:1.3+.5.7 ef2:1.3+.5.7 e1:1.3-.5.7 
+		\bar "|."
+		}
+		\absolute {
+		gf''8 f''8 ef''8 df''8 c''8 bf'8 a'8 bf'8 cf''8 r8 gf''8 af''8 g''8 af''8 gf''8 f''8 d''8 c''8 a'8 b'8 c''8 d''8 f''8 a''8 g''8 f''8 d''8 b'8 a'8 b'8 d''8 f''8 e''8 g''8 a''8 g''8 e''8 c''8 b'8 c''8 e''8 g''8 f''8 e''8 g''8 a''8 bf''8 g''8 r8 gf''8 r8 ef''8 df''8 c''8 bf'8 a'8 cf''8 r8 gf''8 af''8 g''8 af''8 gf''8 f''8 d''8 c''8 a'8 b'8 c''8 d''8 f''8 a''8 g''8 f''8 d''8 b'8 a'8 b'8 d''8 f''8 e''8 g''8 a''8 g''8 e''8 c''8 b'8 c''8 e''8 g''8 f''8 e''8 g''8 a''8 bf''8 g''8 b''8 c'''8 b''8 g''8 e''8 d''8 e''8 g''8 
+		\bar "|."
+		}
+		>>
+	\end{lilypond}
+	\caption{A computer-generated jazz solo}
+\end{figure}
+
+
+\begin{figure}[H]
+	\begin{lilypond}
+		\version "2.24.1"
+		\language "english"
+		<<
+		  \chords {
+		  ef1:m7 af1:m7 d1:m7 g1:7 c2 c2:maj7 c2:7 ef2:7 ef1:m7 af1:m7 d1:m7 g1:7 c2 c2:maj7 c2:7 ef2:7 e1:m7 
+		  \bar "|."
+		  }
+
+		  \absolute {
+			r8 bf'8~ 8 gf' bf' gf'~ 8 cf''~ | 8 ef'~ 4~ 2 |
+			r8 a'8~ 8 f' a' f'~ 8 b'~ | 8 d' e'4~ 2 |
+			r8 g'8~ 8 e' g' a'~ 8 bf'~ | 4 g'8 bf'8~ 8 c''8~ 4 |
+			r8 df''8~ 8 c'' bf' df''8~ 8 cf''8~ | 4 bf'8 af'8~ 8 gf'8 r4 |
+			r8 a'8~ 8 f' g' a'8~ 8 g'8~ | 4 f'8 e'8~ 8 d'8 r4 |
+			r8 e'8~ 4 r8 e'8~ 4 | r8 e'8~ 4 r8 g'8~ 4 |
+			r8 b'8~ 8 g' b' c''~ 8 c'' |
+		  \bar "|."
+		  }
+		>>
+	\end{lilypond}
+	\caption{A human-generated jazz solo}
+\end{figure}
+
+\subsection{Analysis}
+
+\begin{enumerate}
+	\item The good
+	\item The bad
+		\begin{enumerate}
+			\item lack of motives
+		\end{enumerate}
+\end{enumerate}
+
+\printbibliography
+
+\appendix
+
+\chapter{Rules for Counterpoint}
+
+\section{Basic rules}
+\label{app:basic_rules}
+
+Rules used to generate the counterpoint example in
+Figure~\ref{ly:basic_counterpoint}:
+
+\begin{itemize}
+	\item only whole notes
+	\item end on tonic
+	\item opening interval
+	\item only consonances
+	\item only diatonic pitches
+	\item no parallel perfect intervals
+	\item penultimate pitch
+\end{itemize}
+
+\section{Common rules}
+\label{app:common_rules}
+
+\begin{itemize}
+	\item no voice crossing
+	\item no interior unisons
+	\item no repeated pitches
+	\item no similar motion to perfect interval
+	\item no ascending leaps larger than a minor sixth
+	\item no descending leaps larger than a perfect fifth
+\end{itemize}
+
+\section{Guidelines}
+\label{app:guidelines}
+
+\begin{itemize}
+	\item the melodic range should not exceed 16 semitones
+	\item no more than 3 consecutive intervals
+	\item no more than 3 consecutive thirds
+	\item no more than 3 consecutive sixths
+	\item the voices should never be more than a twelfth apart
+	\item leading tone must resolve upward
+	\item no more than 2 consecutive leaps in the same direction
+	\item
+		large leaps (larger than a third) must be balanced by a step in the
+		opposite direction
+\end{itemize}
+
+\end{document}

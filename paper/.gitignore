@@ -1,0 +1,6 @@
+*
+!.gitignore
+!Makefile
+!*.lytex
+!*.bib
+*-blx.bib
